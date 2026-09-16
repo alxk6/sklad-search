@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Поиск номенклатуры (ЧЛБ)</title>
+  <title>Поиск номенклатуры (КЛЩ)</title>
   <style>
     * {
       box-sizing: border-box;
@@ -86,19 +86,12 @@
     .card {
       background: #ffffff;
       border-radius: 12px;
-      padding: 14px;
+      padding: 12px 14px;
       border: 1px solid #e2e8f0;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
       display: flex;
       flex-direction: column;
-      gap: 8px;
-    }
-
-    .card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
+      gap: 6px;
     }
 
     .card-title {
@@ -108,49 +101,41 @@
       line-height: 1.35;
     }
 
-    .badge-cb {
-      background: #ecfdf5;
-      color: #047857;
-      border: 1px solid #a7f3d0;
-      font-family: monospace;
-      font-size: 14px;
-      font-weight: 700;
-      padding: 4px 8px;
-      border-radius: 6px;
-      white-space: nowrap;
-      align-self: flex-start;
-    }
-
-    .variants-group {
+    .card-badges {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       margin-top: 2px;
     }
 
-    .variant-chip {
-      display: inline-flex;
-      align-items: center;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 2px 6px;
+    .badge {
       font-size: 12px;
-      gap: 6px;
-    }
-
-    .variant-char {
-      color: #334155;
+      padding: 3px 8px;
+      border-radius: 6px;
       font-weight: 500;
     }
 
-    .variant-usp {
-      color: #1d4ed8;
-      font-family: monospace;
-      font-size: 11px;
+    .badge-char {
+      background: #f8fafc;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+
+    .badge-code {
       background: #eff6ff;
-      padding: 1px 4px;
-      border-radius: 4px;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    .badge-cb {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 700;
     }
 
     .state-msg {
@@ -164,7 +149,7 @@
 <body>
 
   <div class="header">
-    <h1>Поиск по складу (ЧЛБ)</h1>
+    <h1>Поиск по складу (КЛЩ)</h1>
   </div>
 
   <div class="search-box">
@@ -172,7 +157,7 @@
       type="text" 
       id="searchInput" 
       class="search-input" 
-      placeholder="Начните вводить (Идея 180, Орех, ЦБ-01...)"
+      placeholder="Начните вводить (Рим 120, Орех, ЦБ-01...)"
       disabled
     >
   </div>
@@ -187,7 +172,13 @@
   </div>
 
   <script>
-    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('ЧЛБ');
+    // ==========================================
+    // ВСТАВЬ СВОЙ ID ТАБЛИЦЫ И GID НУЖНОГО ЛИСТА
+    // ==========================================
+    const SHEET_ID = 'ВСТАВЬ_СЮДА_ID_ТАБЛИЦЫ';
+    const SHEET_GID = '0'; // GID листа ЧЛБ (смотри в адресной строке таблицы)
+
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
 
     let database = [];
     const searchInput = document.getElementById('searchInput');
@@ -195,6 +186,7 @@
     const counter = document.getElementById('counter');
     const refreshBtn = document.getElementById('refreshBtn');
 
+    // Надежный парсер CSV с поддержкой кавычек и запятых внутри текста
     function parseCSV(text) {
       const p = [];
       let row = [''];
@@ -231,39 +223,25 @@
 
       try {
         const res = await fetch(SHEET_URL);
-        if (!res.ok) throw new Error('Ошибка загрузки таблицы.');
+        if (!res.ok) throw new Error('Ошибка загрузки таблицы. Проверьте права доступа.');
         
         const csvText = await res.text();
         const rows = parseCSV(csvText);
 
-        // Группируем по связке (Название + ЦБ)
-        const groups = new Map();
-
-        rows.forEach(r => {
-          if (!r || r.length < 4) return;
-          const name = (r[1] || '').trim();
-          const char = (r[2] || '').trim();
-          const usp  = (r[3] || '').trim();
-          const cb   = (r[4] || '').trim();
-
-          if (!name || name.includes('Номенклатура')) return;
-
-          const key = `${name}___${cb}`;
-
-          if (!groups.has(key)) {
-            groups.set(key, {
-              name: name,
-              cb: cb,
-              variants: [] // массив с цветами и кодами УСП
-            });
-          }
-
-          if (char || usp) {
-            groups.get(key).variants.push({ char, usp });
-          }
-        });
-
-        database = Array.from(groups.values());
+        // Столбцы по фото:
+        // A - колонка 0 (пакеты)
+        // B - колонка 1 (Номенклатура)
+        // C - колонка 2 (Характеристика номенклатуры)
+        // D - колонка 3 (Код для УСП)
+        // E - колонка 4 (Код ЦБ)
+        database = rows
+          .filter(r => r.length >= 4 && r[1] && r[1].trim() !== '' && !r[1].includes('Номенклатура'))
+          .map(r => ({
+            name: (r[1] || '').trim(),
+            char: (r[2] || '').trim(),
+            usp:  (r[3] || '').trim(),
+            cb:   (r[4] || '').trim()
+          }));
 
         searchInput.disabled = false;
         refreshBtn.style.display = 'inline';
@@ -275,7 +253,7 @@
         resultsList.innerHTML = `
           <div class="state-msg" style="color: #ef4444;">
             Не удалось загрузить данные.<br><br>
-            Проверьте подключение к интернету или права доступа к таблице.
+            Убедитесь, что в таблице открыт доступ «Всем, у кого есть ссылка», и правильно указан SHEET_ID.
           </div>
         `;
         console.error(err);
@@ -289,8 +267,7 @@
       if (query) {
         const words = query.split(/\s+/);
         matched = database.filter(item => {
-          const variantsText = item.variants.map(v => `${v.char} ${v.usp}`).join(' ');
-          const searchStr = `${item.name} ${item.cb} ${variantsText}`.toLowerCase();
+          const searchStr = `${item.name} ${item.char} ${item.usp} ${item.cb}`.toLowerCase();
           return words.every(w => searchStr.includes(w));
         });
       }
@@ -302,24 +279,17 @@
         return;
       }
 
+      // Ограничиваем выдачу первыми 50 результатами, чтобы не тормозить телефон
       const toShow = matched.slice(0, 50);
 
       resultsList.innerHTML = toShow.map(item => `
         <div class="card">
-          <div class="card-top">
-            <div class="card-title">${item.name}</div>
-            ${item.cb ? `<div class="badge-cb">${item.cb}</div>` : ''}
+          <div class="card-title">${item.name}</div>
+          <div class="card-badges">
+            ${item.char ? `<span class="badge badge-char">${item.char}</span>` : ''}
+            ${item.usp ? `<span class="badge badge-code">УСП: ${item.usp}</span>` : ''}
+            ${item.cb ? `<span class="badge badge-cb">${item.cb}</span>` : ''}
           </div>
-          ${item.variants.length > 0 ? `
-            <div class="variants-group">
-              ${item.variants.map(v => `
-                <div class="variant-chip">
-                  <span class="variant-char">${v.char || '—'}</span>
-                  ${v.usp ? `<span class="variant-usp">${v.usp}</span>` : ''}
-                </div>
-              `).join('')}
-            </div>
-          ` : ''}
         </div>
       `).join('');
     }
@@ -327,6 +297,7 @@
     searchInput.addEventListener('input', renderResults);
     refreshBtn.addEventListener('click', loadSheetData);
 
+    // Загрузка при открытии
     loadSheetData();
   </script>
 </body>
