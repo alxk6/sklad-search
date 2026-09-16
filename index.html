@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Поиск номенклатуры (ЧЛБ)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      padding: 14px;
+    }
+
+    .header {
+      max-width: 600px;
+      margin: 0 auto 12px auto;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .search-box {
+      max-width: 600px;
+      margin: 0 auto 12px auto;
+      position: sticky;
+      top: 10px;
+      z-index: 10;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      border: 2px solid #cbd5e1;
+      border-radius: 12px;
+      background: #ffffff;
+      outline: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: #2563eb;
+    }
+
+    .status-bar {
+      max-width: 600px;
+      margin: 0 auto 12px auto;
+      font-size: 13px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .btn-refresh {
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .list {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f172a;
+      line-height: 1.35;
+    }
+
+    .card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .badge {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+
+    .badge-char {
+      background: #f8fafc;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+
+    .badge-code {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    .badge-cb {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .state-msg {
+      text-align: center;
+      color: #64748b;
+      padding: 40px 15px;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Поиск по складу (ЧЛБ)</h1>
+  </div>
+
+  <div class="search-box">
+    <input 
+      type="text" 
+      id="searchInput" 
+      class="search-input" 
+      placeholder="Начните вводить (Рим 120, Орех, ЦБ-01...)"
+      disabled
+    >
+  </div>
+
+  <div class="status-bar">
+    <span id="counter">Загрузка данных...</span>
+    <button id="refreshBtn" class="btn-refresh" style="display:none;">Обновить</button>
+  </div>
+
+  <div class="list" id="resultsList">
+    <div class="state-msg" id="loadingState">⏳ Подключение к таблице...</div>
+  </div>
+
+  <script>
+    // ==========================================
+    // ВСТАВЬ СВОЙ ID ТАБЛИЦЫ И GID НУЖНОГО ЛИСТА
+    // ==========================================
+    const SHEET_ID = 'ВСТАВЬ_СЮДА_ID_ТАБЛИЦЫ';
+    const SHEET_GID = '0'; // GID листа ЧЛБ (смотри в адресной строке таблицы)
+
+    const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+
+    let database = [];
+    const searchInput = document.getElementById('searchInput');
+    const resultsList = document.getElementById('resultsList');
+    const counter = document.getElementById('counter');
+    const refreshBtn = document.getElementById('refreshBtn');
+
+    // Надежный парсер CSV с поддержкой кавычек и запятых внутри текста
+    function parseCSV(text) {
+      const p = [];
+      let row = [''];
+      let inQuotes = false;
+      
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i + 1];
+
+        if (c === '"') {
+          if (inQuotes && next === '"') {
+            row[row.length - 1] += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          row.push('');
+        } else if ((c === '\r' || c === '\n') && !inQuotes) {
+          if (c === '\r' && next === '\n') i++;
+          p.push(row);
+          row = [''];
+        } else {
+          row[row.length - 1] += c;
+        }
+      }
+      if (row.length > 1 || row[0] !== '') p.push(row);
+      return p;
+    }
+
+    async function loadSheetData() {
+      counter.textContent = 'Обновление данных...';
+      searchInput.disabled = true;
+
+      try {
+        const res = await fetch(SHEET_URL);
+        if (!res.ok) throw new Error('Ошибка загрузки таблицы. Проверьте права доступа.');
+        
+        const csvText = await res.text();
+        const rows = parseCSV(csvText);
+
+        // Столбцы по фото:
+        // A - колонка 0 (пакеты)
+        // B - колонка 1 (Номенклатура)
+        // C - колонка 2 (Характеристика номенклатуры)
+        // D - колонка 3 (Код для УСП)
+        // E - колонка 4 (Код ЦБ)
+        database = rows
+          .filter(r => r.length >= 4 && r[1] && r[1].trim() !== '' && !r[1].includes('Номенклатура'))
+          .map(r => ({
+            name: (r[1] || '').trim(),
+            char: (r[2] || '').trim(),
+            usp:  (r[3] || '').trim(),
+            cb:   (r[4] || '').trim()
+          }));
+
+        searchInput.disabled = false;
+        refreshBtn.style.display = 'inline';
+        renderResults();
+        searchInput.focus();
+
+      } catch (err) {
+        counter.textContent = 'Ошибка загрузки';
+        resultsList.innerHTML = `
+          <div class="state-msg" style="color: #ef4444;">
+            Не удалось загрузить данные.<br><br>
+            Убедитесь, что в таблице открыт доступ «Всем, у кого есть ссылка», и правильно указан SHEET_ID.
+          </div>
+        `;
+        console.error(err);
+      }
+    }
+
+    function renderResults() {
+      const query = searchInput.value.toLowerCase().trim();
+      let matched = database;
+
+      if (query) {
+        const words = query.split(/\s+/);
+        matched = database.filter(item => {
+          const searchStr = `${item.name} ${item.char} ${item.usp} ${item.cb}`.toLowerCase();
+          return words.every(w => searchStr.includes(w));
+        });
+      }
+
+      counter.textContent = `Найдено: ${matched.length}`;
+
+      if (matched.length === 0) {
+        resultsList.innerHTML = '<div class="state-msg">Ничего не найдено</div>';
+        return;
+      }
+
+      // Ограничиваем выдачу первыми 50 результатами, чтобы не тормозить телефон
+      const toShow = matched.slice(0, 50);
+
+      resultsList.innerHTML = toShow.map(item => `
+        <div class="card">
+          <div class="card-title">${item.name}</div>
+          <div class="card-badges">
+            ${item.char ? `<span class="badge badge-char">${item.char}</span>` : ''}
+            ${item.usp ? `<span class="badge badge-code">УСП: ${item.usp}</span>` : ''}
+            ${item.cb ? `<span class="badge badge-cb">${item.cb}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    searchInput.addEventListener('input', renderResults);
+    refreshBtn.addEventListener('click', loadSheetData);
+
+    // Загрузка при открытии
+    loadSheetData();
+  </script>
+</body>
+</html>
