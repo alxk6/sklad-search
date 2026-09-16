@@ -86,6 +86,304 @@
     .card {
       background: #ffffff;
       border-radius: 12px;
+      padding: 14px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f172a;
+      line-height: 1.35;
+    }
+
+    .badge-cb {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      align-self: flex-start;
+    }
+
+    .variants-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .variant-chip {
+      display: inline-flex;
+      align-items: center;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      gap: 6px;
+    }
+
+    .variant-char {
+      color: #334155;
+      font-weight: 500;
+    }
+
+    .variant-usp {
+      color: #1d4ed8;
+      font-family: monospace;
+      font-size: 11px;
+      background: #eff6ff;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .state-msg {
+      text-align: center;
+      color: #64748b;
+      padding: 40px 15px;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Поиск по складу (КЛЩ)</h1>
+  </div>
+
+  <div class="search-box">
+    <input 
+      type="text" 
+      id="searchInput" 
+      class="search-input" 
+      placeholder="Начните вводить (Идея 180, Орех, ЦБ-01...)"
+      disabled
+    >
+  </div>
+
+  <div class="status-bar">
+    <span id="counter">Загрузка данных...</span>
+    <button id="refreshBtn" class="btn-refresh" style="display:none;">Обновить</button>
+  </div>
+
+  <div class="list" id="resultsList">
+    <div class="state-msg" id="loadingState">⏳ Подключение к таблице...</div>
+  </div>
+
+  <script>
+    // Ссылка на вкладку КЛЩ
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
+
+    let database = [];
+    const searchInput = document.getElementById('searchInput');
+    const resultsList = document.getElementById('resultsList');
+    const counter = document.getElementById('counter');
+    const refreshBtn = document.getElementById('refreshBtn');
+
+    function parseCSV(text) {
+      const p = [];
+      let row = [''];
+      let inQuotes = false;
+      
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i + 1];
+
+        if (c === '"') {
+          if (inQuotes && next === '"') {
+            row[row.length - 1] += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          row.push('');
+        } else if ((c === '\r' || c === '\n') && !inQuotes) {
+          if (c === '\r' && next === '\n') i++;
+          p.push(row);
+          row = [''];
+        } else {
+          row[row.length - 1] += c;
+        }
+      }
+      if (row.length > 1 || row[0] !== '') p.push(row);
+      return p;
+    }
+
+    async function loadSheetData() {
+      counter.textContent = 'Обновление данных...';
+      searchInput.disabled = true;
+
+      try {
+        const res = await fetch(SHEET_URL);
+        if (!res.ok) throw new Error('Ошибка загрузки таблицы.');
+        
+        const csvText = await res.text();
+        const rows = parseCSV(csvText);
+
+        // Группируем позиции по названию и коду ЦБ, чтобы убрать задвоения
+        const groups = new Map();
+
+        rows.forEach(r => {
+          if (!r || r.length < 4) return;
+          const name = (r[1] || '').trim();
+          const char = (r[2] || '').trim();
+          const usp  = (r[3] || '').trim();
+          const cb   = (r[4] || '').trim();
+
+          if (!name || name.includes('Номенклатура')) return;
+
+          const key = `${name}___${cb}`;
+
+          if (!groups.has(key)) {
+            groups.set(key, {
+              name: name,
+              cb: cb,
+              variants: []
+            });
+          }
+
+          if (char || usp) {
+            groups.get(key).variants.push({ char, usp });
+          }
+        });
+
+        database = Array.from(groups.values());
+
+        searchInput.disabled = false;
+        refreshBtn.style.display = 'inline';
+        renderResults();
+        searchInput.focus();
+
+      } catch (err) {
+        counter.textContent = 'Ошибка загрузки';
+        resultsList.innerHTML = `
+          <div class="state-msg" style="color: #ef4444;">
+            Не удалось загрузить данные листа КЛЩ.<br><br>
+            Убедитесь, что лист опубликован и вкладка называется именно «КЛЩ».
+          </div>
+        `;
+        console.error(err);
+      }
+    }
+
+    function renderResults() {
+      const query = searchInput.value.toLowerCase().trim();
+      let matched = database;
+
+      if (query) {
+        const words = query.split(/\s+/);
+        matched = database.filter(item => {
+          const variantsText = item.variants.map(v => `${v.char} ${v.usp}`).join(' ');
+          const searchStr = `${item.name} ${item.cb} ${variantsText}`.toLowerCase();
+          return words.every(w => searchStr.includes(w));
+        });
+      }
+
+      counter.textContent = `Найдено: ${matched.length}`;
+
+      if (matched.length === 0) {
+        resultsList.innerHTML = '<div class="state-msg">Ничего не найдено</div>';
+        return;
+      }
+
+      const toShow = matched.slice(0, 60);
+
+      resultsList.innerHTML = toShow.map(item => `
+        <div class="card">
+          <div class="card-top">
+            <div class="card-title">${item.name}</div>
+            ${item.cb ? `<div class="badge-cb">${item.cb}</div>` : ''}
+          </div>
+          ${item.variants.length > 0 ? `
+            <div class="variants-group">
+              ${item.variants.map(v => `
+                <div class="variant-chip">
+                  <span class="variant-char">${v.char || '—'}</span>
+                  ${v.usp ? `<span class="variant-usp">${v.usp}</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    searchInput.addEventListener('input', renderResults);
+    refreshBtn.addEventListener('click', loadSheetData);
+
+    loadSheetData();
+  </script>
+</body>
+</html>
+      top: 10px;
+      z-index: 10;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      border: 2px solid #cbd5e1;
+      border-radius: 12px;
+      background: #ffffff;
+      outline: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: #2563eb;
+    }
+
+    .status-bar {
+      max-width: 600px;
+      margin: 0 auto 12px auto;
+      font-size: 13px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .btn-refresh {
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .list {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
       padding: 12px 14px;
       border: 1px solid #e2e8f0;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
