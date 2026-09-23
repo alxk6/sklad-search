@@ -82,7 +82,7 @@
 
     .admin-card textarea {
       width: 100%;
-      height: 130px;
+      height: 120px;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
       padding: 10px;
@@ -92,6 +92,19 @@
     }
 
     .admin-card textarea:focus {
+      border-color: #2563eb;
+    }
+
+    .password-field {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    .password-field:focus {
       border-color: #2563eb;
     }
 
@@ -281,6 +294,11 @@
       <code>Код_ЦБ | Товар | Цвет</code>
     </div>
     <textarea id="adminInput" placeholder="ЦБ-0191319 | Стол Босс Ван | Белый мрамор, Белый"></textarea>
+    
+    <div>
+      <input type="password" id="secretKeyInput" class="password-field" placeholder="Секретный ключ авторизации" autocomplete="off">
+    </div>
+
     <div class="admin-footer">
       <button class="btn-panel" style="background:#e2e8f0; color:#334155; flex:none; padding:8px 14px;" onclick="toggleAdminPanel()">Закрыть</button>
       <button class="btn-panel btn-primary" id="btnSaveCloud" style="flex:none; padding:8px 18px;" onclick="saveToGoogleForm()">Отправить в таблицу</button>
@@ -311,96 +329,13 @@
   <script>
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
 
+    // Параметры формы и полей (пароль в коде не хранится!)
     const FORM_ACTION_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfMJMW3oo_cwJ2A2_350B-xsoD6lVVL5NIMC7dpbGWpSPXgJw/formResponse';
     const FIELD_CB = 'entry.879121518';
     const FIELD_NAME = 'entry.55415620';
     const FIELD_COLOR = 'entry.826464591';
+    const FIELD_KEY = 'entry.424704948';
     const STORAGE_KEY = 'saved_local_items_klsh';
-
-    // Эталонный SHA-256 хэш для Q911
-    const PASSWORD_HASH = '3fc895697d81a97d76a26df163c9a444a7f0e69dbfbc3251c88880520dd47155';
-
-    // Автономная функция SHA-256 (работает оффлайн и на любых мобильных устройствах без HTTPS)
-    function sha256(ascii) {
-      function rightRotate(value, amount) {
-        return (value >>> amount) | (value << (32 - amount));
-      }
-      
-      const mathPow = Math.pow;
-      const maxWord = mathPow(2, 32);
-      let lengthProperty = 'length';
-      let i, j;
-      let result = '';
-
-      const words = [];
-      const asciiBitLength = ascii[lengthProperty] * 8;
-      
-      let hash = sha256.h = sha256.h || [];
-      const k = sha256.k = sha256.k || [];
-      let primeCounter = k[lengthProperty];
-
-      const isComposite = {};
-      for (let candidate = 2; primeCounter < 64; candidate++) {
-        if (!isComposite[candidate]) {
-          for (i = 0; i < 300; i += candidate) {
-            isComposite[i] = candidate;
-          }
-          hash[primeCounter] = (mathPow(candidate, .5) * maxWord) | 0;
-          k[primeCounter++] = (mathPow(candidate, 1/3) * maxWord) | 0;
-        }
-      }
-      
-      ascii += '\x80';
-      while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
-      for (i = 0; i < ascii[lengthProperty]; i++) {
-        j = ascii.charCodeAt(i);
-        if (j >> 8) return;
-        words[i >> 2] |= j << ((3 - i) % 4) * 8;
-      }
-      words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
-      words[words[lengthProperty]] = (asciiBitLength | 0);
-      
-      for (j = 0; j < words[lengthProperty];) {
-        const w = words.slice(j, j += 16);
-        const oldHash = hash;
-        hash = hash.slice(0, 8);
-        
-        for (i = 0; i < 64; i++) {
-          const i2 = i + j;
-          const w15 = w[i - 15], w2 = w[i - 2];
-
-          const a = hash[0], e = hash[4];
-          const temp1 = hash[7]
-            + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
-            + ((e & hash[5]) ^ ((~e) & hash[6]))
-            + k[i]
-            + (w[i] = (i < 16) ? w[i] : (
-                w[i - 16]
-                + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
-                + w[i - 7]
-                + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
-              ) | 0
-            );
-          const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
-            + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
-          
-          hash = [(temp1 + temp2) | 0].concat(hash);
-          hash[4] = (hash[4] + temp1) | 0;
-        }
-        
-        for (i = 0; i < 8; i++) {
-          hash[i] = (hash[i] + oldHash[i]) | 0;
-        }
-      }
-      
-      for (i = 0; i < 8; i++) {
-        for (j = 3; j + 1; j--) {
-          const b = (hash[i] >> (j * 8)) & 255;
-          result += ((b < 16) ? 0 : '') + b.toString(16);
-        }
-      }
-      return result;
-    }
 
     let sheetDatabase = [];
     let localDatabase = [];
@@ -413,8 +348,13 @@
     const toast = document.getElementById('toast');
     const adminPanel = document.getElementById('adminPanel');
     const adminInput = document.getElementById('adminInput');
+    const secretKeyInput = document.getElementById('secretKeyInput');
     const btnSaveCloud = document.getElementById('btnSaveCloud');
     let toastTimer = null;
+
+    // Восстанавливаем ранее введённый ключ из сессии
+    const savedKey = sessionStorage.getItem('admin_form_key');
+    if (savedKey) secretKeyInput.value = savedKey;
 
     function showToast(text) {
       toast.textContent = text;
@@ -425,32 +365,7 @@
       }, 2200);
     }
 
-    function checkAdminAccess() {
-      if (sessionStorage.getItem('is_admin_auth') === 'true') {
-        return true;
-      }
-      const entered = prompt('Введите пароль администратора:');
-      if (entered === null) return false;
-
-      // Убираем случайные пробелы по краям
-      const cleanInput = entered.trim();
-      const enteredHash = sha256(cleanInput);
-
-      if (enteredHash === PASSWORD_HASH) {
-        sessionStorage.setItem('is_admin_auth', 'true');
-        return true;
-      } else {
-        alert('Неверный пароль!');
-        return false;
-      }
-    }
-
     function toggleAdminPanel() {
-      if (!adminPanel.classList.contains('active')) {
-        const authorized = checkAdminAccess();
-        if (!authorized) return;
-      }
-
       adminPanel.classList.toggle('active');
       if (adminPanel.classList.contains('active')) {
         adminInput.focus();
@@ -476,11 +391,12 @@
       database = [...localDatabase, ...sheetDatabase];
     }
 
-    async function sendSingleRow(cb, name, color) {
+    async function sendSingleRow(cb, name, color, key) {
       const formData = new FormData();
       formData.append(FIELD_CB, cb);
       formData.append(FIELD_NAME, name);
       formData.append(FIELD_COLOR, color);
+      formData.append(FIELD_KEY, key);
 
       return fetch(FORM_ACTION_URL, {
         method: 'POST',
@@ -490,12 +406,17 @@
     }
 
     async function saveToGoogleForm() {
-      const authorized = checkAdminAccess();
-      if (!authorized) return;
-
       const text = adminInput.value.trim();
+      const secretKey = secretKeyInput.value.trim();
+
+      if (!secretKey) {
+        showToast('Введите секретный ключ!');
+        secretKeyInput.focus();
+        return;
+      }
+
       if (!text) {
-        showToast('Поле ввода пусто');
+        showToast('Поле списка позиций пусто');
         return;
       }
 
@@ -543,7 +464,7 @@
           const item = items[i];
           btnSaveCloud.textContent = `Отправка (${i + 1}/${items.length})...`;
 
-          await sendSingleRow(item.cb, item.name, item.color);
+          await sendSingleRow(item.cb, item.name, item.color, secretKey);
           successCount++;
 
           const existing = localDatabase.find(d => d.cb === item.cb && d.name === item.name);
@@ -559,6 +480,9 @@
             });
           }
         }
+
+        // Запоминаем введённый ключ в браузере, чтобы не вводить его каждый раз
+        sessionStorage.setItem('admin_form_key', secretKey);
 
         saveLocalItems();
         combineDatabases();
