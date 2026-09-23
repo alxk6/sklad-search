@@ -311,15 +311,96 @@
   <script>
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
 
-    // Параметры вашей Google Формы
     const FORM_ACTION_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfMJMW3oo_cwJ2A2_350B-xsoD6lVVL5NIMC7dpbGWpSPXgJw/formResponse';
     const FIELD_CB = 'entry.879121518';
     const FIELD_NAME = 'entry.55415620';
     const FIELD_COLOR = 'entry.826464591';
     const STORAGE_KEY = 'saved_local_items_klsh';
 
-    // SHA-256 хэш для пароля Q911
+    // Эталонный SHA-256 хэш для Q911
     const PASSWORD_HASH = '3fc895697d81a97d76a26df163c9a444a7f0e69dbfbc3251c88880520dd47155';
+
+    // Автономная функция SHA-256 (работает оффлайн и на любых мобильных устройствах без HTTPS)
+    function sha256(ascii) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount));
+      }
+      
+      const mathPow = Math.pow;
+      const maxWord = mathPow(2, 32);
+      let lengthProperty = 'length';
+      let i, j;
+      let result = '';
+
+      const words = [];
+      const asciiBitLength = ascii[lengthProperty] * 8;
+      
+      let hash = sha256.h = sha256.h || [];
+      const k = sha256.k = sha256.k || [];
+      let primeCounter = k[lengthProperty];
+
+      const isComposite = {};
+      for (let candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = 0; i < 300; i += candidate) {
+            isComposite[i] = candidate;
+          }
+          hash[primeCounter] = (mathPow(candidate, .5) * maxWord) | 0;
+          k[primeCounter++] = (mathPow(candidate, 1/3) * maxWord) | 0;
+        }
+      }
+      
+      ascii += '\x80';
+      while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
+      for (i = 0; i < ascii[lengthProperty]; i++) {
+        j = ascii.charCodeAt(i);
+        if (j >> 8) return;
+        words[i >> 2] |= j << ((3 - i) % 4) * 8;
+      }
+      words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+      words[words[lengthProperty]] = (asciiBitLength | 0);
+      
+      for (j = 0; j < words[lengthProperty];) {
+        const w = words.slice(j, j += 16);
+        const oldHash = hash;
+        hash = hash.slice(0, 8);
+        
+        for (i = 0; i < 64; i++) {
+          const i2 = i + j;
+          const w15 = w[i - 15], w2 = w[i - 2];
+
+          const a = hash[0], e = hash[4];
+          const temp1 = hash[7]
+            + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
+            + ((e & hash[5]) ^ ((~e) & hash[6]))
+            + k[i]
+            + (w[i] = (i < 16) ? w[i] : (
+                w[i - 16]
+                + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
+                + w[i - 7]
+                + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+              ) | 0
+            );
+          const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
+            + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+          
+          hash = [(temp1 + temp2) | 0].concat(hash);
+          hash[4] = (hash[4] + temp1) | 0;
+        }
+        
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0;
+        }
+      }
+      
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j + 1; j--) {
+          const b = (hash[i] >> (j * 8)) & 255;
+          result += ((b < 16) ? 0 : '') + b.toString(16);
+        }
+      }
+      return result;
+    }
 
     let sheetDatabase = [];
     let localDatabase = [];
@@ -344,21 +425,17 @@
       }, 2200);
     }
 
-    async function sha256(message) {
-      const msgBuffer = new TextEncoder().encode(message);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    async function checkAdminAccess() {
+    function checkAdminAccess() {
       if (sessionStorage.getItem('is_admin_auth') === 'true') {
         return true;
       }
       const entered = prompt('Введите пароль администратора:');
-      if (!entered) return false;
+      if (entered === null) return false;
 
-      const enteredHash = await sha256(entered);
+      // Убираем случайные пробелы по краям
+      const cleanInput = entered.trim();
+      const enteredHash = sha256(cleanInput);
+
       if (enteredHash === PASSWORD_HASH) {
         sessionStorage.setItem('is_admin_auth', 'true');
         return true;
@@ -368,9 +445,9 @@
       }
     }
 
-    async function toggleAdminPanel() {
+    function toggleAdminPanel() {
       if (!adminPanel.classList.contains('active')) {
-        const authorized = await checkAdminAccess();
+        const authorized = checkAdminAccess();
         if (!authorized) return;
       }
 
@@ -413,7 +490,7 @@
     }
 
     async function saveToGoogleForm() {
-      const authorized = await checkAdminAccess();
+      const authorized = checkAdminAccess();
       if (!authorized) return;
 
       const text = adminInput.value.trim();
