@@ -31,6 +31,76 @@
       color: #0f172a;
     }
 
+    .top-actions {
+      max-width: 600px;
+      margin: 0 auto 10px auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-panel {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+    }
+
+    .admin-card {
+      max-width: 600px;
+      margin: 0 auto 16px auto;
+      background: #ffffff;
+      border: 2px solid #2563eb;
+      border-radius: 14px;
+      padding: 16px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.15);
+    }
+
+    .admin-card.active {
+      display: flex;
+    }
+
+    .admin-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .admin-card textarea {
+      width: 100%;
+      height: 130px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .admin-card textarea:focus {
+      border-color: #2563eb;
+    }
+
+    .admin-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
     .search-box {
       max-width: 600px;
       margin: 0 auto 12px auto;
@@ -109,7 +179,6 @@
       line-height: 1.35;
     }
 
-    /* Интерактивный бейдж ЦБ */
     .badge-cb {
       background: #ecfdf5;
       color: #047857;
@@ -123,15 +192,11 @@
       cursor: pointer;
       user-select: none;
       transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
     }
 
     .badge-cb:active {
       transform: scale(0.94);
       background: #a7f3d0;
-      color: #064e3b;
     }
 
     .variants-group {
@@ -173,7 +238,6 @@
       font-size: 15px;
     }
 
-    /* Всплывающее уведомление о копировании */
     .toast {
       position: fixed;
       bottom: 24px;
@@ -204,6 +268,25 @@
     <h1>Поиск по складу (КЛЩ)</h1>
   </div>
 
+  <div class="top-actions">
+    <button class="btn-panel btn-primary" onclick="toggleAdminPanel()">
+      ➕ Добавить товар в Google Таблицу
+    </button>
+  </div>
+
+  <div class="admin-card" id="adminPanel">
+    <div class="admin-title">Добавление товаров в базу</div>
+    <div style="font-size: 12px; color: #64748b;">
+      Вставьте строки (разделитель Таб, «|» или точка с запятой):<br>
+      <code>Код_ЦБ | Товар | Цвет</code>
+    </div>
+    <textarea id="adminInput" placeholder="ЦБ-0191319 | Стол Босс Ван | Белый мрамор, Белый"></textarea>
+    <div class="admin-footer">
+      <button class="btn-panel" style="background:#e2e8f0; color:#334155; flex:none; padding:8px 14px;" onclick="toggleAdminPanel()">Закрыть</button>
+      <button class="btn-panel btn-primary" id="btnSaveCloud" style="flex:none; padding:8px 18px;" onclick="saveToGoogleForm()">Отправить в таблицу</button>
+    </div>
+  </div>
+
   <div class="search-box">
     <input 
       type="text" 
@@ -228,12 +311,28 @@
   <script>
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
 
+    // Параметры вашей Google Формы
+    const FORM_ACTION_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfMJMW3oo_cwJ2A2_350B-xsoD6lVVL5NIMC7dpbGWpSPXgJw/formResponse';
+    const FIELD_CB = 'entry.879121518';
+    const FIELD_NAME = 'entry.55415620';
+    const FIELD_COLOR = 'entry.826464591';
+    const STORAGE_KEY = 'saved_local_items_klsh';
+
+    // SHA-256 хэш для пароля Q911
+    const PASSWORD_HASH = '3fc895697d81a97d76a26df163c9a444a7f0e69dbfbc3251c88880520dd47155';
+
+    let sheetDatabase = [];
+    let localDatabase = [];
     let database = [];
+
     const searchInput = document.getElementById('searchInput');
     const resultsList = document.getElementById('resultsList');
     const counter = document.getElementById('counter');
     const refreshBtn = document.getElementById('refreshBtn');
     const toast = document.getElementById('toast');
+    const adminPanel = document.getElementById('adminPanel');
+    const adminInput = document.getElementById('adminInput');
+    const btnSaveCloud = document.getElementById('btnSaveCloud');
     let toastTimer = null;
 
     function showToast(text) {
@@ -242,10 +341,164 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => {
         toast.classList.remove('show');
-      }, 1800);
+      }, 2200);
     }
 
-    // Универсальное копирование в буфер
+    async function sha256(message) {
+      const msgBuffer = new TextEncoder().encode(message);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function checkAdminAccess() {
+      if (sessionStorage.getItem('is_admin_auth') === 'true') {
+        return true;
+      }
+      const entered = prompt('Введите пароль администратора:');
+      if (!entered) return false;
+
+      const enteredHash = await sha256(entered);
+      if (enteredHash === PASSWORD_HASH) {
+        sessionStorage.setItem('is_admin_auth', 'true');
+        return true;
+      } else {
+        alert('Неверный пароль!');
+        return false;
+      }
+    }
+
+    async function toggleAdminPanel() {
+      if (!adminPanel.classList.contains('active')) {
+        const authorized = await checkAdminAccess();
+        if (!authorized) return;
+      }
+
+      adminPanel.classList.toggle('active');
+      if (adminPanel.classList.contains('active')) {
+        adminInput.focus();
+      }
+    }
+
+    function loadSavedLocalItems() {
+      try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        localDatabase = data ? JSON.parse(data) : [];
+      } catch (e) {
+        localDatabase = [];
+      }
+    }
+
+    function saveLocalItems() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(localDatabase));
+      } catch (e) {}
+    }
+
+    function combineDatabases() {
+      database = [...localDatabase, ...sheetDatabase];
+    }
+
+    async function sendSingleRow(cb, name, color) {
+      const formData = new FormData();
+      formData.append(FIELD_CB, cb);
+      formData.append(FIELD_NAME, name);
+      formData.append(FIELD_COLOR, color);
+
+      return fetch(FORM_ACTION_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: formData
+      });
+    }
+
+    async function saveToGoogleForm() {
+      const authorized = await checkAdminAccess();
+      if (!authorized) return;
+
+      const text = adminInput.value.trim();
+      if (!text) {
+        showToast('Поле ввода пусто');
+        return;
+      }
+
+      const lines = text.split('\n');
+      const items = [];
+
+      lines.forEach(line => {
+        const rawRow = line.trim();
+        if (!rawRow) return;
+
+        let parts = [];
+        if (rawRow.includes('\t')) {
+          parts = rawRow.split('\t');
+        } else if (rawRow.includes('|')) {
+          parts = rawRow.split('|');
+        } else if (rawRow.includes(';')) {
+          parts = rawRow.split(';');
+        } else {
+          parts = rawRow.split(/\s{2,}/);
+        }
+
+        parts = parts.map(p => p.trim()).filter(p => p.length > 0);
+
+        if (parts.length >= 2) {
+          items.push({
+            cb: parts[0] || '',
+            name: parts[1] || '',
+            color: parts.slice(2).join(' ') || ''
+          });
+        }
+      });
+
+      if (items.length === 0) {
+        showToast('Не удалось распознать строки');
+        return;
+      }
+
+      btnSaveCloud.disabled = true;
+      btnSaveCloud.textContent = `Отправка (0/${items.length})...`;
+
+      let successCount = 0;
+
+      try {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          btnSaveCloud.textContent = `Отправка (${i + 1}/${items.length})...`;
+
+          await sendSingleRow(item.cb, item.name, item.color);
+          successCount++;
+
+          const existing = localDatabase.find(d => d.cb === item.cb && d.name === item.name);
+          if (existing) {
+            if (item.color && !existing.variants.some(v => v.char === item.color)) {
+              existing.variants.push({ char: item.color, usp: 'новое' });
+            }
+          } else {
+            localDatabase.unshift({
+              name: item.name,
+              cb: item.cb,
+              variants: item.color ? [{ char: item.color, usp: 'новое' }] : []
+            });
+          }
+        }
+
+        saveLocalItems();
+        combineDatabases();
+
+        adminInput.value = '';
+        adminPanel.classList.remove('active');
+        renderResults();
+        showToast(`Успешно сохранено: ${successCount}`);
+      } catch (err) {
+        console.error(err);
+        showToast('Ошибка при отправке');
+      } finally {
+        btnSaveCloud.disabled = false;
+        btnSaveCloud.textContent = 'Отправить в таблицу';
+      }
+    }
+
     window.copyCode = function(code) {
       if (!code) return;
       if (navigator.clipboard && window.isSecureContext) {
@@ -338,7 +591,8 @@
           }
         });
 
-        database = Array.from(groups.values());
+        sheetDatabase = Array.from(groups.values());
+        combineDatabases();
 
         searchInput.disabled = false;
         refreshBtn.style.display = 'inline';
@@ -346,13 +600,9 @@
         searchInput.focus();
 
       } catch (err) {
-        counter.textContent = 'Ошибка загрузки';
-        resultsList.innerHTML = `
-          <div class="state-msg" style="color: #ef4444;">
-            Не удалось загрузить данные листа КЛЩ.<br><br>
-            Убедитесь, что лист опубликован и вкладка называется «КЛЩ».
-          </div>
-        `;
+        counter.textContent = 'Ошибка загрузки таблицы';
+        combineDatabases();
+        renderResults();
         console.error(err);
       }
     }
@@ -406,6 +656,7 @@
     searchInput.addEventListener('input', renderResults);
     refreshBtn.addEventListener('click', loadSheetData);
 
+    loadSavedLocalItems();
     loadSheetData();
   </script>
 </body>
