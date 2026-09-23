@@ -296,7 +296,7 @@
     <textarea id="adminInput" placeholder="ЦБ-0191319 | Стол Босс Ван | Белый мрамор, Белый"></textarea>
     
     <div>
-      <input type="password" id="secretKeyInput" class="password-field" placeholder="Секретный ключ авторизации" autocomplete="off">
+      <input type="password" id="secretKeyInput" class="password-field" placeholder="Ключ авторизации" autocomplete="off">
     </div>
 
     <div class="admin-footer">
@@ -329,7 +329,7 @@
   <script>
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRp637fFL0HWIU3lcKCGL-9Uty72Q7U1X2CvlhvmU3N4TDstRC1A7ACQ-RK8v1PoQ/pub?output=csv&sheet=' + encodeURIComponent('КЛЩ');
 
-    // Параметры формы и полей (пароль в коде не хранится!)
+    // Параметры формы (проверка ключа происходит на стороне Google Forms)
     const FORM_ACTION_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfMJMW3oo_cwJ2A2_350B-xsoD6lVVL5NIMC7dpbGWpSPXgJw/formResponse';
     const FIELD_CB = 'entry.879121518';
     const FIELD_NAME = 'entry.55415620';
@@ -352,7 +352,7 @@
     const btnSaveCloud = document.getElementById('btnSaveCloud');
     let toastTimer = null;
 
-    // Восстанавливаем ранее введённый ключ из сессии
+    // Восстанавливаем введённый ключ из памяти текущей вкладки
     const savedKey = sessionStorage.getItem('admin_form_key');
     if (savedKey) secretKeyInput.value = savedKey;
 
@@ -410,7 +410,7 @@
       const secretKey = secretKeyInput.value.trim();
 
       if (!secretKey) {
-        showToast('Введите секретный ключ!');
+        showToast('Введите ключ!');
         secretKeyInput.focus();
         return;
       }
@@ -467,9 +467,9 @@
           await sendSingleRow(item.cb, item.name, item.color, secretKey);
           successCount++;
 
-          const existing = localDatabase.find(d => d.cb === item.cb && d.name === item.name);
+          const existing = localDatabase.find(d => (d.cb || '').toLowerCase() === item.cb.toLowerCase() && (d.name || '').toLowerCase() === item.name.toLowerCase());
           if (existing) {
-            if (item.color && !existing.variants.some(v => v.char === item.color)) {
+            if (item.color && !existing.variants.some(v => (v.char || '').toLowerCase() === item.color.toLowerCase())) {
               existing.variants.push({ char: item.color, usp: 'новое' });
             }
           } else {
@@ -481,7 +481,6 @@
           }
         }
 
-        // Запоминаем введённый ключ в браузере, чтобы не вводить его каждый раз
         sessionStorage.setItem('admin_form_key', secretKey);
 
         saveLocalItems();
