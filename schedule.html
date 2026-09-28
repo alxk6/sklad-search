@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>График поступления (КЛЩ)</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      padding: 14px;
+    }
+
+    .header {
+      max-width: 650px;
+      margin: 0 auto 12px auto;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 2px;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .nav-links {
+      margin-top: 6px;
+    }
+
+    .nav-links a {
+      color: #2563eb;
+      font-size: 13px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .admin-upload-box {
+      max-width: 650px;
+      margin: 12px auto;
+      background: #ffffff;
+      border: 2px dashed #3b82f6;
+      border-radius: 12px;
+      padding: 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .admin-btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .btn-file {
+      background: #2563eb;
+      color: #ffffff;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-block;
+      border: none;
+    }
+
+    .btn-file:hover { background: #1d4ed8; }
+
+    .btn-clean {
+      background: #ef4444;
+      color: #ffffff;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-clean:hover { background: #dc2626; }
+
+    .file-input-hidden {
+      display: none;
+    }
+
+    .upload-status {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .auth-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1100;
+    }
+
+    .auth-modal.active { display: flex; }
+
+    .auth-card {
+      background: #ffffff;
+      width: 100%;
+      max-width: 340px;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .auth-input {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 16px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      outline: none;
+    }
+
+    .auth-input:focus { border-color: #2563eb; }
+
+    .auth-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .btn-modal {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+
+    .search-box {
+      max-width: 650px;
+      margin: 10px auto;
+      position: sticky;
+      top: 10px;
+      z-index: 10;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 13px 16px;
+      font-size: 15px;
+      border: 2px solid #cbd5e1;
+      border-radius: 12px;
+      background: #ffffff;
+      outline: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    }
+
+    .search-input:focus { border-color: #2563eb; }
+
+    .calendar-widget {
+      max-width: 650px;
+      margin: 0 auto 12px auto;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .cal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      text-transform: capitalize;
+    }
+
+    .cal-nav-btn {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .quick-filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .q-btn {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
+    }
+
+    .q-btn.active {
+      background: #0f172a;
+      color: #ffffff;
+      border-color: #0f172a;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      text-align: center;
+    }
+
+    .cal-day-head {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      padding: 4px 0;
+    }
+
+    .cal-day-cell {
+      border: 1px solid #f1f5f9;
+      border-radius: 8px;
+      padding: 6px 2px;
+      font-size: 12px;
+      background: #ffffff;
+      color: #94a3b8;
+      cursor: default;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 44px;
+      justify-content: center;
+      position: relative;
+    }
+
+    .cal-day-cell.other-month { opacity: 0.25; }
+
+    .cal-day-cell.has-data {
+      border-color: #93c5fd;
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .cal-day-cell.has-data:hover { background: #dbeafe; }
+
+    .cal-day-cell.selected {
+      background: #2563eb !important;
+      color: #ffffff !important;
+      border-color: #2563eb !important;
+    }
+
+    .cal-day-cell.is-today::after {
+      content: '';
+      position: absolute;
+      bottom: 3px;
+      width: 4px;
+      height: 4px;
+      background: #ef4444;
+      border-radius: 50%;
+    }
+
+    .cal-badge {
+      font-size: 9px;
+      background: #2563eb;
+      color: #ffffff;
+      padding: 1px 4px;
+      border-radius: 4px;
+      margin-top: 2px;
+      font-weight: bold;
+    }
+
+    .cal-day-cell.selected .cal-badge {
+      background: #ffffff;
+      color: #2563eb;
+    }
+
+    .status-bar {
+      max-width: 650px;
+      margin: 0 auto 10px auto;
+      font-size: 13px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .btn-refresh {
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .list {
+      max-width: 650px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 14px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.3;
+    }
+
+    .card-color {
+      font-size: 13px;
+      color: #334155;
+      background: #f1f5f9;
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      width: fit-content;
+      font-weight: 500;
+    }
+
+    .card-meta {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .card-qty-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ecfdf5;
+      border: 1.5px solid #a7f3d0;
+      border-radius: 10px;
+      padding: 6px 12px;
+      min-width: 64px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .qty-number {
+      font-size: 18px;
+      font-weight: 800;
+      color: #047857;
+      font-family: monospace;
+    }
+
+    .qty-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: #059669;
+      font-weight: 700;
+    }
+
+    .state-msg {
+      text-align: center;
+      color: #64748b;
+      padding: 40px 15px;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>График поступления</h1>
+    <p>Склад КЛЩ</p>
+    <div class="nav-links">
+      <a href="index.html">← Перейти в поиск номенклатуры (ЦБ)</a>
+    </div>
+  </div>
+
+  <div class="admin-upload-box">
+    <div class="admin-btn-row">
+      <button class="btn-file" onclick="handleUploadClick()">
+        📤 Загрузить файл Excel (.xlsx)
+      </button>
+      <button class="btn-clean" onclick="handleCleanOldClick()">
+        🗑️ Удалить дни старше 2 дней
+      </button>
+    </div>
+    <input type="file" id="excelFileInput" class="file-input-hidden" accept=".xlsx, .xls">
+    <div class="upload-status" id="uploadStatus">Загрузка и очистка доступны администратору</div>
+  </div>
+
+  <div class="auth-modal" id="authModal">
+    <div class="auth-card">
+      <h3 style="font-size: 16px;">Пароль администратора</h3>
+      <input type="password" id="authPasswordInput" class="auth-input" placeholder="Введите пароль" autocomplete="off">
+      <div class="auth-actions">
+        <button class="btn-modal" style="background:#e2e8f0; color:#334155;" onclick="closeAuthModal()">Отмена</button>
+        <button class="btn-modal" style="background:#2563eb; color:#ffffff;" onclick="submitAuthPassword()">Подтвердить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="search-box">
+    <input 
+      type="text" 
+      id="searchInput" 
+      class="search-input" 
+      placeholder="Поиск по названию или цвету..."
+    >
+  </div>
+
+  <div class="calendar-widget">
+    <div class="quick-filters">
+      <button class="q-btn active" id="btnFilterRolling" onclick="setQuickFilter('rolling14')">Актуальные (2 недели)</button>
+      <button class="q-btn" id="btnFilterToday" onclick="setQuickFilter('today')">Сегодня</button>
+      <button class="q-btn" id="btnFilterTomorrow" onclick="setQuickFilter('tomorrow')">Завтра</button>
+      <button class="q-btn" id="btnFilterAll" onclick="setQuickFilter('all')">Все даты</button>
+    </div>
+
+    <div class="calendar-header">
+      <button class="cal-nav-btn" onclick="changeMonth(-1)">‹</button>
+      <div class="cal-title" id="calMonthTitle">Загрузка...</div>
+      <button class="cal-nav-btn" onclick="changeMonth(1)">›</button>
+    </div>
+
+    <div class="calendar-grid" id="calDaysGrid"></div>
+  </div>
+
+  <div class="status-bar">
+    <span id="counter">Загрузка данных...</span>
+    <button class="btn-refresh" onclick="loadFromGoogle()">Обновить</button>
+  </div>
+
+  <div class="list" id="scheduleList">
+    <div class="state-msg">⏳ Загрузка расписания из Google...</div>
+  </div>
+
+  <script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwR5xAbJyuLKMwnDg-8mLrJMRvtlwbIF85O3Vo6zlxbhLdHEgoiFlMirVT-5CbSHNvv/exec';
+    const SECRET_TOKEN = "UTkxMQ==";
+
+    let rawItems = [];
+    let dateColumnsList = [];
+    let activeDateFilter = 'rolling14';
+    let currentCalDate = new Date();
+    let pendingAction = null;
+
+    const searchInput = document.getElementById('searchInput');
+    const scheduleList = document.getElementById('scheduleList');
+    const counter = document.getElementById('counter');
+    const excelFileInput = document.getElementById('excelFileInput');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const authModal = document.getElementById('authModal');
+    const authPasswordInput = document.getElementById('authPasswordInput');
+    const calMonthTitle = document.getElementById('calMonthTitle');
+    const calDaysGrid = document.getElementById('calDaysGrid');
+
+    function isAuthorized() {
+      return sessionStorage.getItem('is_schedule_admin') === 'true';
+    }
+
+    function handleUploadClick() {
+      if (isAuthorized()) {
+        excelFileInput.click();
+      } else {
+        pendingAction = 'upload';
+        openAuthModal();
+      }
+    }
+
+    function handleCleanOldClick() {
+      if (isAuthorized()) {
+        executeCleanOldDates();
+      } else {
+        pendingAction = 'clean';
+        openAuthModal();
+      }
+    }
+
+    function openAuthModal() {
+      authPasswordInput.value = '';
+      authModal.classList.add('active');
+      setTimeout(() => authPasswordInput.focus(), 100);
+    }
+
+    function closeAuthModal() {
+      authModal.classList.remove('active');
+      pendingAction = null;
+    }
+
+    function submitAuthPassword() {
+      const entered = authPasswordInput.value.trim();
+      try {
+        if (btoa(entered) === SECRET_TOKEN) {
+          sessionStorage.setItem('is_schedule_admin', 'true');
+          closeAuthModal();
+          if (pendingAction === 'upload') {
+            excelFileInput.click();
+          } else if (pendingAction === 'clean') {
+            executeCleanOldDates();
+          }
+          return;
+        }
+      } catch (e) {}
+
+      alert('Неверный пароль!');
+      authPasswordInput.value = '';
+      authPasswordInput.focus();
+    }
+
+    authPasswordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitAuthPassword();
+    });
+
+    async function executeCleanOldDates() {
+      if (!confirm('Удалить из базы в Google все даты старше 2 дней назад?')) return;
+
+      uploadStatus.textContent = 'Очистка старых дат...';
+
+      const cleanedItems = rawItems.filter(item => isDateActual(item.dateKey, item.rawDate));
+      const cleanedCols = dateColumnsList.filter(dc => isDateActual(dc.key, dc.rawDate));
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'overwrite', items: cleanedItems, dateCols: cleanedCols })
+        });
+
+        uploadStatus.textContent = '✅ Старые дни успешно удалены';
+        setTimeout(loadFromGoogle, 1200);
+      } catch (err) {
+        console.error(err);
+        uploadStatus.textContent = 'Ошибка при очистке';
+      }
+    }
+
+    function parseDateToTimestamp(str) {
+      if (!str) return 0;
+      const s = String(str).trim();
+      const currentYear = new Date().getFullYear();
+
+      if (/^\d{5}$/.test(s)) {
+        const parsed = XLSX.SSF.parse_date_code(parseInt(s, 10));
+        if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d).getTime();
+      }
+
+      const mDot = s.match(/(\d{1,2})\.(\d{1,2})/);
+      if (mDot) {
+        const d = parseInt(mDot[1], 10);
+        const m = parseInt(mDot[2], 10);
+        return new Date(currentYear, m - 1, d).getTime();
+      }
+
+      const mSlash = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (mSlash) {
+        return new Date(parseInt(mSlash[3], 10), parseInt(mSlash[1], 10) - 1, parseInt(mSlash[2], 10)).getTime();
+      }
+
+      return 0;
+    }
+
+    function isDateActual(dateKey, rawDate) {
+      const ts = rawDate || parseDateToTimestamp(dateKey);
+      if (!ts) return false;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const minThreshold = new Date(today);
+      minThreshold.setDate(today.getDate() - 2);
+
+      const maxThreshold = new Date(today);
+      maxThreshold.setDate(today.getDate() + 14);
+
+      return ts >= minThreshold.getTime() && ts <= maxThreshold.getTime();
+    }
+
+    function formatHeaderDate(val) {
+      val = String(val).trim();
+      const currentYear = new Date().getFullYear();
+      const weekdays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+      if (/^\d{5}$/.test(val)) {
+        const parsed = XLSX.SSF.parse_date_code(parseInt(val, 10));
+        if (parsed) {
+          const day = String(parsed.d).padStart(2, '0');
+          const month = String(parsed.m).padStart(2, '0');
+          const d = new Date(parsed.y, parsed.m - 1, parsed.d);
+          return { key: `${day}.${month}`, label: `${day}.${month} (${weekdays[d.getDay()]})`, rawDate: d.getTime() };
+        }
+      }
+
+      const mSlash = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (mSlash) {
+        const month = parseInt(mSlash[1], 10);
+        const day   = parseInt(mSlash[2], 10);
+        const year  = parseInt(mSlash[3], 10);
+        const d = new Date(year, month - 1, day);
+        const wd = !isNaN(d.getTime()) ? ` (${weekdays[d.getDay()]})` : '';
+        const dStr = String(day).padStart(2, '0');
+        const mStr = String(month).padStart(2, '0');
+        return { key: `${dStr}.${mStr}`, label: `${dStr}.${mStr}${wd}`, rawDate: d.getTime() };
+      }
+
+      const mDot = val.match(/^(\d{1,2})\.(\d{1,2})/);
+      if (mDot) {
+        const day = parseInt(mDot[1], 10);
+        const month = parseInt(mDot[2], 10);
+        const d = new Date(currentYear, month - 1, day);
+        const dStr = String(day).padStart(2, '0');
+        const mStr = String(month).padStart(2, '0');
+        return { key: `${dStr}.${mStr}`, label: `${dStr}.${mStr} (${weekdays[d.getDay()]})`, rawDate: d.getTime() };
+      }
+
+      return { key: val, label: val, rawDate: 0 };
+    }
+
+    excelFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      uploadStatus.textContent = `Чтение: ${file.name}...`;
+
+      const reader = new FileReader();
+      reader.onload = async function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+
+          let sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('КЛЩ')) || workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+          const parsedData = extractScheduleFromRows(rows);
+          if (!parsedData) {
+            uploadStatus.textContent = 'Ошибка: не найдена строка дат в файле.';
+            return;
+          }
+
+          uploadStatus.textContent = 'Обновление базы в Google...';
+          await saveToGoogle(parsedData);
+          uploadStatus.textContent = `✅ Успешно обновлено: ${file.name}`;
+          
+          setTimeout(loadFromGoogle, 1500);
+
+        } catch (err) {
+          console.error(err);
+          uploadStatus.textContent = 'Ошибка сохранения файла';
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function extractScheduleFromRows(rows) {
+      let headerRowIdx = -1;
+      let dateCols = [];
+
+      for (let r = 0; r < Math.min(rows.length, 12); r++) {
+        const row = rows[r];
+        const found = [];
+        for (let c = 0; c < row.length; c++) {
+          const cell = String(row[c] || '').trim();
+          if (/\d{1,2}[\/\.]\d{1,2}/.test(cell) || cell.includes('202') || /^\d{5}$/.test(cell)) {
+            const parsed = formatHeaderDate(cell);
+            found.push({ index: c, key: parsed.key, displayDate: parsed.label, rawDate: parsed.rawDate });
+          }
+        }
+        if (found.length >= 3) {
+          headerRowIdx = r;
+          dateCols = found;
+          break;
+        }
+      }
+
+      if (headerRowIdx === -1) return null;
+
+      const items = [];
+      for (let i = headerRowIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.length === 0) continue;
+
+        const name = String(r[1] || '').trim();
+        const color = String(r[2] || '').trim();
+
+        if (!name || name.toLowerCase().includes('номенклатура') || name.toLowerCase().includes('итого')) continue;
+
+        dateCols.forEach(dc => {
+          const rawVal = String(r[dc.index] || '').replace(/\s+/g, '').replace(',', '.');
+          const qty = parseFloat(rawVal);
+          if (!isNaN(qty) && qty > 0) {
+            items.push({
+              name: name,
+              color: color || 'Основной',
+              qty: qty,
+              dateKey: dc.key,
+              displayDate: dc.displayDate,
+              rawDate: dc.rawDate
+            });
+          }
+        });
+      }
+
+      return { items, dateCols };
+    }
+
+    async function saveToGoogle(dataObj) {
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataObj)
+      });
+    }
+
+    async function loadFromGoogle() {
+      counter.textContent = 'Загрузка...';
+      try {
+        const res = await fetch(`${SCRIPT_URL}?_t=${Date.now()}`);
+        const cloudData = await res.json();
+
+        if (cloudData && cloudData.items && cloudData.items.length > 0) {
+          rawItems = cloudData.items || [];
+          dateColumnsList = cloudData.dateCols || [];
+
+          dateColumnsList.forEach(dc => {
+            if (!dc.rawDate) dc.rawDate = parseDateToTimestamp(dc.key);
+          });
+          rawItems.forEach(it => {
+            if (!it.rawDate) it.rawDate = parseDateToTimestamp(it.dateKey);
+          });
+
+          renderCalendar();
+          renderSchedule();
+        } else {
+          scheduleList.innerHTML = '<div class="state-msg">В базе пока нет сохранённого графика</div>';
+          counter.textContent = 'График пуст';
+        }
+      } catch (err) {
+        console.error(err);
+        counter.textContent = 'Ошибка загрузки';
+      }
+    }
+
+    function renderCalendar() {
+      const year = currentCalDate.getFullYear();
+      const month = currentCalDate.getMonth();
+
+      const monthNames = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+      ];
+      calMonthTitle.textContent = `${monthNames[month]} ${year}`;
+
+      const dateCounts = {};
+      rawItems.forEach(it => {
+        dateCounts[it.dateKey] = (dateCounts[it.dateKey] || 0) + 1;
+      });
+
+      const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+      let html = weekdays.map(w => `<div class="cal-day-head">${w}</div>`).join('');
+
+      const firstDay = new Date(year, month, 1);
+      let startingDay = firstDay.getDay() - 1;
+      if (startingDay === -1) startingDay = 6;
+
+      const totalDays = new Date(year, month + 1, 0).getDate();
+      const prevMonthDays = new Date(year, month, 0).getDate();
+
+      for (let i = startingDay - 1; i >= 0; i--) {
+        html += `<div class="cal-day-cell other-month">${prevMonthDays - i}</div>`;
+      }
+
+      const today = new Date();
+
+      for (let d = 1; d <= totalDays; d++) {
+        const dStr = String(d).padStart(2, '0');
+        const mStr = String(month + 1).padStart(2, '0');
+        const key = `${dStr}.${mStr}`;
+        const count = dateCounts[key] || 0;
+
+        const isToday = (today.getFullYear() === year && today.getMonth() === month && today.getDate() === d);
+        const isSelected = (activeDateFilter === key);
+
+        let classes = 'cal-day-cell';
+        if (count > 0) classes += ' has-data';
+        if (isSelected) classes += ' selected';
+        if (isToday) classes += ' is-today';
+
+        const clickAttr = count > 0 ? `onclick="selectDate('${key}')"` : '';
+
+        html += `
+          <div class="${classes}" ${clickAttr}>
+            <span>${d}</span>
+            ${count > 0 ? `<span class="cal-badge">${count}</span>` : ''}
+          </div>
+        `;
+      }
+
+      calDaysGrid.innerHTML = html;
+    }
+
+    window.changeMonth = function(dir) {
+      currentCalDate.setMonth(currentCalDate.getMonth() + dir);
+      renderCalendar();
+    };
+
+    window.selectDate = function(key) {
+      activeDateFilter = key;
+      document.querySelectorAll('.q-btn').forEach(b => b.classList.remove('active'));
+      renderCalendar();
+      renderSchedule();
+    };
+
+    window.setQuickFilter = function(type) {
+      document.querySelectorAll('.q-btn').forEach(b => b.classList.remove('active'));
+
+      const today = new Date();
+      const dToday = String(today.getDate()).padStart(2, '0');
+      const mToday = String(today.getMonth() + 1).padStart(2, '0');
+
+      if (type === 'today') {
+        activeDateFilter = `${dToday}.${mToday}`;
+        document.getElementById('btnFilterToday').classList.add('active');
+      } else if (type === 'tomorrow') {
+        const tom = new Date(today);
+        tom.setDate(today.getDate() + 1);
+        activeDateFilter = `${String(tom.getDate()).padStart(2, '0')}.${String(tom.getMonth() + 1).padStart(2, '0')}`;
+        document.getElementById('btnFilterTomorrow').classList.add('active');
+      } else if (type === 'rolling14') {
+        activeDateFilter = 'rolling14';
+        document.getElementById('btnFilterRolling').classList.add('active');
+      } else {
+        activeDateFilter = 'all';
+        document.getElementById('btnFilterAll').classList.add('active');
+      }
+
+      renderCalendar();
+      renderSchedule();
+    };
+
+    function renderSchedule() {
+      const q = searchInput.value.toLowerCase().trim();
+      let filtered = rawItems;
+
+      if (activeDateFilter === 'rolling14') {
+        filtered = filtered.filter(item => isDateActual(item.dateKey, item.rawDate));
+      } else if (activeDateFilter !== 'all') {
+        filtered = filtered.filter(item => item.dateKey === activeDateFilter);
+      }
+
+      if (q) {
+        const words = q.split(/\s+/);
+        filtered = filtered.filter(item => {
+          const searchStr = `${item.name} ${item.color} ${item.displayDate}`.toLowerCase();
+          return words.every(w => searchStr.includes(w));
+        });
+      }
+
+      filtered.sort((a, b) => (a.rawDate || 0) - (b.rawDate || 0));
+
+      const totalUnits = filtered.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+      counter.textContent = `Позиций: ${filtered.length} (всего ${totalUnits} шт.)`;
+
+      if (filtered.length === 0) {
+        scheduleList.innerHTML = '<div class="state-msg">В выбранную дату поступлений нет</div>';
+        return;
+      }
+
+      scheduleList.innerHTML = filtered.map(item => `
+        <div class="card">
+          <div class="card-info">
+            <div class="card-title">${item.name}</div>
+            <div class="card-color">${item.color}</div>
+            <div class="card-meta">📅 Дата: <b>${item.displayDate}</b></div>
+          </div>
+          <div class="card-qty-badge">
+            <span class="qty-number">${item.qty}</span>
+            <span class="qty-label">шт.</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    searchInput.addEventListener('input', renderSchedule);
+    loadFromGoogle();
+  </script>
+</body>
+</html>
