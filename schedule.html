@@ -311,15 +311,44 @@
       color: #2563eb;
     }
 
-    .status-bar {
+    .status-card {
       max-width: 650px;
-      margin: 0 auto 10px auto;
-      font-size: 13px;
-      color: #64748b;
+      margin: 0 auto 12px auto;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 12px 16px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .status-row-main {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0 4px;
+      font-size: 13px;
+      color: #475569;
+    }
+
+    .truck-calc-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #166534;
+      font-weight: 600;
+    }
+
+    .truck-calc-box .truck-count {
+      font-size: 15px;
+      color: #15803d;
+      font-weight: 800;
     }
 
     .btn-refresh {
@@ -376,10 +405,26 @@
       font-weight: 500;
     }
 
+    .card-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
     .card-meta {
       font-size: 12px;
       color: #64748b;
-      margin-top: 2px;
+    }
+
+    .card-truck-tag {
+      font-size: 11px;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-weight: 600;
     }
 
     .card-qty-badge {
@@ -478,21 +523,29 @@
     <div class="calendar-grid" id="calDaysGrid"></div>
   </div>
 
-  <div class="status-bar">
-    <span id="counter">Загрузка данных...</span>
-    <button class="btn-refresh" onclick="loadFromGoogle()">Обновить</button>
+  <div class="status-card" id="statusCard">
+    <div class="status-row-main">
+      <span id="counter">Загрузка данных...</span>
+      <button class="btn-refresh" onclick="loadAllData()">Обновить</button>
+    </div>
+    <div class="truck-calc-box" id="truckBox" style="display: none;">
+      <span>🚛</span>
+      <div id="truckInfoText">Расчёт фур...</div>
+    </div>
   </div>
 
   <div class="list" id="scheduleList">
-    <div class="state-msg">⏳ Загрузка расписания из Google...</div>
+    <div class="state-msg">⏳ Загрузка расписания и нормативов вместимости...</div>
   </div>
 
   <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwR5xAbJyuLKMwnDg-8mLrJMRvtlwbIF85O3Vo6zlxbhLdHEgoiFlMirVT-5CbSHNvv/exec';
+    const SCRIPT_URL_SCHEDULE = 'https://script.google.com/macros/s/AKfycbwR5xAbJyuLKMwnDg-8mLrJMRvtlwbIF85O3Vo6zlxbhLdHEgoiFlMirVT-5CbSHNvv/exec';
+    const SCRIPT_URL_CAPACITY = 'https://script.google.com/macros/s/AKfycbxcK3GHyDCVeqK-w36tDc-NG9_Gz1wJ4gFG0ffWiSL6ogutPiqqmyR7VO8Lqph1Kwv3HQ/exec';
     const SECRET_TOKEN = "UTkxMQ==";
 
     let rawItems = [];
     let dateColumnsList = [];
+    let capacityList = [];
     let activeDateFilter = 'rolling14';
     let currentCalDate = new Date();
     let pendingAction = null;
@@ -500,6 +553,8 @@
     const searchInput = document.getElementById('searchInput');
     const scheduleList = document.getElementById('scheduleList');
     const counter = document.getElementById('counter');
+    const truckBox = document.getElementById('truckBox');
+    const truckInfoText = document.getElementById('truckInfoText');
     const excelFileInput = document.getElementById('excelFileInput');
     const uploadStatus = document.getElementById('uploadStatus');
     const authModal = document.getElementById('authModal');
@@ -573,7 +628,7 @@
       const cleanedCols = dateColumnsList.filter(dc => isDateActual(dc.key, dc.rawDate));
 
       try {
-        await fetch(SCRIPT_URL, {
+        await fetch(SCRIPT_URL_SCHEDULE, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
@@ -581,7 +636,7 @@
         });
 
         uploadStatus.textContent = '✅ Старые дни успешно удалены';
-        setTimeout(loadFromGoogle, 1200);
+        setTimeout(loadAllData, 1200);
       } catch (err) {
         console.error(err);
         uploadStatus.textContent = 'Ошибка при очистке';
@@ -695,7 +750,7 @@
           await saveToGoogle(parsedData);
           uploadStatus.textContent = `✅ Успешно обновлено: ${file.name}`;
           
-          setTimeout(loadFromGoogle, 1500);
+          setTimeout(loadAllData, 1500);
 
         } catch (err) {
           console.error(err);
@@ -758,7 +813,7 @@
     }
 
     async function saveToGoogle(dataObj) {
-      await fetch(SCRIPT_URL, {
+      await fetch(SCRIPT_URL_SCHEDULE, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
@@ -766,15 +821,108 @@
       });
     }
 
-    async function loadFromGoogle() {
-      counter.textContent = 'Загрузка...';
-      try {
-        const res = await fetch(`${SCRIPT_URL}?_t=${Date.now()}`);
-        const cloudData = await res.json();
+    function cleanString(str) {
+      return String(str || '')
+        .toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/[^a-zа-я0-9]/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
 
-        if (cloudData && cloudData.items && cloudData.items.length > 0) {
-          rawItems = cloudData.items || [];
-          dateColumnsList = cloudData.dateCols || [];
+    function matchCapacity(itemName) {
+      const cleanItem = cleanString(itemName);
+      const itemTokens = cleanItem.split(' ').filter(w => w.length >= 2);
+
+      const mPacket = cleanItem.match(/пакет\s*(\d+)/i);
+      const targetPacket = mPacket ? mPacket[1] : null;
+
+      let bestCandidate = null;
+      let highestScore = -1;
+
+      for (let i = 0; i < capacityList.length; i++) {
+        const entry = capacityList[i];
+        const cleanEntry = entry.cleanName;
+        let score = 0;
+
+        if (targetPacket) {
+          const mEntryPack = cleanEntry.match(/пакет\s*(\d+)/i) || cleanEntry.match(/(\d+)\s*\/\s*\d+/);
+          if (mEntryPack && mEntryPack[1] === targetPacket) {
+            score += 15;
+          } else if (cleanEntry.includes('пакет') && !mEntryPack) {
+            continue;
+          }
+        }
+
+        itemTokens.forEach(t => {
+          if (cleanEntry.includes(t)) {
+            score += (t.length > 3 ? 3 : 1);
+          }
+        });
+
+        // Поиск габаритов как самостоятельных чисел через границу слова \b
+        const dims = ['135', '180', '80', '90', '120', '160', '200', '220', '236', '400', '450'];
+        dims.forEach(d => {
+          const reg = new RegExp('\\b' + d + '\\b');
+          if (reg.test(cleanItem) && reg.test(cleanEntry)) {
+            score += 8;
+          } else if (reg.test(cleanItem) && !reg.test(cleanEntry)) {
+            score -= 4;
+          }
+        });
+
+        if (score > highestScore && score >= 4) {
+          highestScore = score;
+          bestCandidate = entry;
+        }
+      }
+
+      return bestCandidate;
+    }
+
+    function getItemFuraFraction(item) {
+      const match = matchCapacity(item.name);
+      let furaQty = 120;
+
+      if (match && match.furaQty > 0) {
+        furaQty = match.furaQty;
+      } else {
+        if (!item.name.toLowerCase().includes('пакет')) {
+          furaQty = 80;
+        }
+      }
+
+      const fraction = item.qty / furaQty;
+      return { fraction: fraction };
+    }
+
+    async function loadAllData() {
+      counter.textContent = 'Загрузка баз...';
+      try {
+        const [resSchedule, resCapacity] = await Promise.all([
+          fetch(`${SCRIPT_URL_SCHEDULE}?_t=${Date.now()}`),
+          fetch(`${SCRIPT_URL_CAPACITY}?_t=${Date.now()}`).catch(() => null)
+        ]);
+
+        const cloudSchedule = await resSchedule.json();
+        if (resCapacity) {
+          try {
+            capacityList = await resCapacity.json();
+            if (!Array.isArray(capacityList)) {
+              capacityList = Object.keys(capacityList).map(k => ({
+                rawName: k,
+                cleanName: cleanString(k),
+                furaQty: capacityList[k].furaQty || 120
+              }));
+            }
+          } catch(e) {
+            console.warn('Ошибка кратности:', e);
+          }
+        }
+
+        if (cloudSchedule && cloudSchedule.items && cloudSchedule.items.length > 0) {
+          rawItems = cloudSchedule.items || [];
+          dateColumnsList = cloudSchedule.dateCols || [];
 
           dateColumnsList.forEach(dc => {
             if (!dc.rawDate) dc.rawDate = parseDateToTimestamp(dc.key);
@@ -788,10 +936,12 @@
         } else {
           scheduleList.innerHTML = '<div class="state-msg">В базе пока нет сохранённого графика</div>';
           counter.textContent = 'График пуст';
+          truckBox.style.display = 'none';
         }
       } catch (err) {
         console.error(err);
         counter.textContent = 'Ошибка загрузки';
+        truckBox.style.display = 'none';
       }
     }
 
@@ -913,30 +1063,51 @@
       filtered.sort((a, b) => (a.rawDate || 0) - (b.rawDate || 0));
 
       const totalUnits = filtered.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-      counter.textContent = `Позиций: ${filtered.length} (всего ${totalUnits} шт.)`;
+      counter.innerHTML = `Позиций: <b>${filtered.length}</b> (всего: <b>${totalUnits} шт.</b>)`;
 
       if (filtered.length === 0) {
+        truckBox.style.display = 'none';
         scheduleList.innerHTML = '<div class="state-msg">В выбранную дату поступлений нет</div>';
         return;
       }
 
-      scheduleList.innerHTML = filtered.map(item => `
-        <div class="card">
-          <div class="card-info">
-            <div class="card-title">${item.name}</div>
-            <div class="card-color">${item.color}</div>
-            <div class="card-meta">📅 Дата: <b>${item.displayDate}</b></div>
+      let totalFraction = 0;
+      filtered.forEach(it => {
+        const calc = getItemFuraFraction(it);
+        it._fraction = calc.fraction;
+        totalFraction += calc.fraction;
+      });
+
+      const fullTrucks = Math.ceil(totalFraction);
+      const percentTotal = Math.round(totalFraction * 100);
+
+      truckBox.style.display = 'flex';
+      truckInfoText.innerHTML = `Требуется фур: <span class="truck-count">~${totalFraction.toFixed(1)}</span> (к заказу: <b>${fullTrucks} фур</b>, объём: <b>${percentTotal}%</b>)`;
+
+      scheduleList.innerHTML = filtered.map(item => {
+        const itemPercent = (item._fraction * 100).toFixed(1);
+
+        return `
+          <div class="card">
+            <div class="card-info">
+              <div class="card-title">${item.name}</div>
+              <div class="card-color">${item.color}</div>
+              <div class="card-meta-row">
+                <span class="card-meta">📅 ${item.displayDate}</span>
+                <span class="card-truck-tag">🚛 ~${itemPercent}% фуры</span>
+              </div>
+            </div>
+            <div class="card-qty-badge">
+              <span class="qty-number">${item.qty}</span>
+              <span class="qty-label">шт.</span>
+            </div>
           </div>
-          <div class="card-qty-badge">
-            <span class="qty-number">${item.qty}</span>
-            <span class="qty-label">шт.</span>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     searchInput.addEventListener('input', renderSchedule);
-    loadFromGoogle();
+    loadAllData();
   </script>
 </body>
 </html>
