@@ -535,7 +535,7 @@
   </div>
 
   <div class="list" id="scheduleList">
-    <div class="state-msg">⏳ Загрузка расписания и нормативов вместимости...</div>
+    <div class="state-msg">⏳ Загрузка расписания...</div>
   </div>
 
   <script>
@@ -724,9 +724,31 @@
       return { key: val, label: val, rawDate: 0 };
     }
 
-    excelFileInput.addEventListener('change', function(e) {
+    async function ensureCapacityLoaded() {
+      if (capacityList.length > 0) return;
+      try {
+        const res = await fetch(`${SCRIPT_URL_CAPACITY}?_t=${Date.now()}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          capacityList = data;
+        } else if (data) {
+          capacityList = Object.keys(data).map(k => ({
+            rawName: k,
+            cleanName: cleanString(k),
+            furaQty: data[k].furaQty || 120
+          }));
+        }
+      } catch (e) {
+        console.warn('Не удалось загрузить нормы вместимости:', e);
+      }
+    }
+
+    excelFileInput.addEventListener('change', async function(e) {
       const file = e.target.files[0];
       if (!file) return;
+
+      uploadStatus.textContent = 'Подготовка нормативов...';
+      await ensureCapacityLoaded();
 
       uploadStatus.textContent = `Чтение: ${file.name}...`;
 
@@ -759,6 +781,79 @@
       };
       reader.readAsArrayBuffer(file);
     });
+
+    function cleanString(str) {
+      return String(str || '')
+        .toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/[^a-zа-я0-9]/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function matchCapacity(itemName) {
+      const cleanItem = cleanString(itemName);
+      const itemTokens = cleanItem.split(' ').filter(w => w.length >= 2);
+
+      const mPacket = cleanItem.match(/пакет\s*(\d+)/i);
+      const targetPacket = mPacket ? mPacket[1] : null;
+
+      let bestCandidate = null;
+      let highestScore = -1;
+
+      for (let i = 0; i < capacityList.length; i++) {
+        const entry = capacityList[i];
+        const cleanEntry = entry.cleanName || cleanString(entry.rawName);
+        let score = 0;
+
+        if (targetPacket) {
+          const mEntryPack = cleanEntry.match(/пакет\s*(\d+)/i) || cleanEntry.match(/(\d+)\s*\/\s*\d+/);
+          if (mEntryPack && mEntryPack[1] === targetPacket) {
+            score += 15;
+          } else if (cleanEntry.includes('пакет') && !mEntryPack) {
+            continue;
+          }
+        }
+
+        itemTokens.forEach(t => {
+          if (cleanEntry.includes(t)) {
+            score += (t.length > 3 ? 3 : 1);
+          }
+        });
+
+        const dims = ['135', '180', '80', '90', '120', '160', '200', '220', '236', '400', '450'];
+        dims.forEach(d => {
+          const reg = new RegExp('\\b' + d + '\\b');
+          if (reg.test(cleanItem) && reg.test(cleanEntry)) {
+            score += 8;
+          } else if (reg.test(cleanItem) && !reg.test(cleanEntry)) {
+            score -= 4;
+          }
+        });
+
+        if (score > highestScore && score >= 4) {
+          highestScore = score;
+          bestCandidate = entry;
+        }
+      }
+
+      return bestCandidate;
+    }
+
+    function calcFuraFraction(name, qty) {
+      const match = matchCapacity(name);
+      let furaQty = 120;
+
+      if (match && match.furaQty > 0) {
+        furaQty = match.furaQty;
+      } else {
+        if (!name.toLowerCase().includes('пакет')) {
+          furaQty = 80;
+        }
+      }
+
+      return Number((qty / furaQty).toFixed(4));
+    }
 
     function extractScheduleFromRows(rows) {
       let headerRowIdx = -1;
@@ -801,6 +896,7 @@
               name: name,
               color: color || 'Основной',
               qty: qty,
+              fraction: calcFuraFraction(name, qty), // Рассчитано сразу при парсинге
               dateKey: dc.key,
               displayDate: dc.displayDate,
               rawDate: dc.rawDate
@@ -821,104 +917,11 @@
       });
     }
 
-    function cleanString(str) {
-      return String(str || '')
-        .toLowerCase()
-        .replace(/\(.*?\)/g, '')
-        .replace(/[^a-zа-я0-9]/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    function matchCapacity(itemName) {
-      const cleanItem = cleanString(itemName);
-      const itemTokens = cleanItem.split(' ').filter(w => w.length >= 2);
-
-      const mPacket = cleanItem.match(/пакет\s*(\d+)/i);
-      const targetPacket = mPacket ? mPacket[1] : null;
-
-      let bestCandidate = null;
-      let highestScore = -1;
-
-      for (let i = 0; i < capacityList.length; i++) {
-        const entry = capacityList[i];
-        const cleanEntry = entry.cleanName;
-        let score = 0;
-
-        if (targetPacket) {
-          const mEntryPack = cleanEntry.match(/пакет\s*(\d+)/i) || cleanEntry.match(/(\d+)\s*\/\s*\d+/);
-          if (mEntryPack && mEntryPack[1] === targetPacket) {
-            score += 15;
-          } else if (cleanEntry.includes('пакет') && !mEntryPack) {
-            continue;
-          }
-        }
-
-        itemTokens.forEach(t => {
-          if (cleanEntry.includes(t)) {
-            score += (t.length > 3 ? 3 : 1);
-          }
-        });
-
-        // Поиск габаритов как самостоятельных чисел через границу слова \b
-        const dims = ['135', '180', '80', '90', '120', '160', '200', '220', '236', '400', '450'];
-        dims.forEach(d => {
-          const reg = new RegExp('\\b' + d + '\\b');
-          if (reg.test(cleanItem) && reg.test(cleanEntry)) {
-            score += 8;
-          } else if (reg.test(cleanItem) && !reg.test(cleanEntry)) {
-            score -= 4;
-          }
-        });
-
-        if (score > highestScore && score >= 4) {
-          highestScore = score;
-          bestCandidate = entry;
-        }
-      }
-
-      return bestCandidate;
-    }
-
-    function getItemFuraFraction(item) {
-      const match = matchCapacity(item.name);
-      let furaQty = 120;
-
-      if (match && match.furaQty > 0) {
-        furaQty = match.furaQty;
-      } else {
-        if (!item.name.toLowerCase().includes('пакет')) {
-          furaQty = 80;
-        }
-      }
-
-      const fraction = item.qty / furaQty;
-      return { fraction: fraction };
-    }
-
     async function loadAllData() {
       counter.textContent = 'Загрузка баз...';
       try {
-        const [resSchedule, resCapacity] = await Promise.all([
-          fetch(`${SCRIPT_URL_SCHEDULE}?_t=${Date.now()}`),
-          fetch(`${SCRIPT_URL_CAPACITY}?_t=${Date.now()}`).catch(() => null)
-        ]);
-
+        const resSchedule = await fetch(`${SCRIPT_URL_SCHEDULE}?_t=${Date.now()}`);
         const cloudSchedule = await resSchedule.json();
-        if (resCapacity) {
-          try {
-            capacityList = await resCapacity.json();
-            if (!Array.isArray(capacityList)) {
-              capacityList = Object.keys(capacityList).map(k => ({
-                rawName: k,
-                cleanName: cleanString(k),
-                furaQty: capacityList[k].furaQty || 120
-              }));
-            }
-          } catch(e) {
-            console.warn('Ошибка кратности:', e);
-          }
-        }
 
         if (cloudSchedule && cloudSchedule.items && cloudSchedule.items.length > 0) {
           rawItems = cloudSchedule.items || [];
@@ -1071,13 +1074,8 @@
         return;
       }
 
-      let totalFraction = 0;
-      filtered.forEach(it => {
-        const calc = getItemFuraFraction(it);
-        it._fraction = calc.fraction;
-        totalFraction += calc.fraction;
-      });
-
+      // Мгновенное суммирование готовых чисел без сопоставлений строк
+      const totalFraction = filtered.reduce((sum, it) => sum + (Number(it.fraction) || 0), 0);
       const fullTrucks = Math.ceil(totalFraction);
       const percentTotal = Math.round(totalFraction * 100);
 
@@ -1085,7 +1083,8 @@
       truckInfoText.innerHTML = `Требуется фур: <span class="truck-count">~${totalFraction.toFixed(1)}</span> (к заказу: <b>${fullTrucks} фур</b>, объём: <b>${percentTotal}%</b>)`;
 
       scheduleList.innerHTML = filtered.map(item => {
-        const itemPercent = (item._fraction * 100).toFixed(1);
+        const fraction = Number(item.fraction) || 0;
+        const itemPercent = (fraction * 100).toFixed(1);
 
         return `
           <div class="card">
